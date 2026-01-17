@@ -1,0 +1,45 @@
+[project]
+name = "listen"
+version = "1.0.0"
+description = "Audio Transcription Tool with Summarization"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "python-multipart",
+    "openai-whisper",
+    "transformers",
+    "torch",
+    "pyannote.audio",
+    "python-ffmpeg",
+    "sqlalchemy",
+    "psycopg2-binary",
+    "bcrypt",
+    "httpx",
+    "python-dotenv",
+    "pydantic-settings",
+    "huggingface-hub",
+    "aiofiles",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+    "black",
+    "ruff",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["."]
+include = [
+    "*.py",
+    "templates/**/*",
+    "static/**/*",
+]
+
+

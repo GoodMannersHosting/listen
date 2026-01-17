@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Audio Transcription Tool</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/marked@11.1.1/marked.min.js"></script>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Left Sidebar -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <h2>Transcribe</h2>
+                <button class="sidebar-toggle" id="sidebarToggle" aria-label="Toggle sidebar">☰</button>
+            </div>
+            
+            <div class="profile-section">
+                <select id="profileSelect" class="profile-select">
+                    <option value="">Select Profile...</option>
+                </select>
+                <button id="newProfileBtn" class="btn-secondary">+ New Profile</button>
+            </div>
+            
+                <div class="sidebar-content">
+                <button id="newConversationBtn" class="btn-primary">+ New Conversation</button>
+                <div id="conversationsList" class="conversations-list"></div>
+            </div>
+            
+            <!-- Rename Conversation Modal -->
+            <div id="renameModal" class="modal" style="display: none;">
+                <div class="modal-content">
+                    <h3>Rename Conversation</h3>
+                    <input type="text" id="renameInput" placeholder="Conversation title" required>
+                    <div class="modal-actions">
+                        <button id="saveRenameBtn" class="btn-primary">Save</button>
+                        <button id="cancelRenameBtn" class="btn-secondary">Cancel</button>
+                    </div>
+                </div>
+            </div>
+        </aside>
+        
+        <!-- Main Content Area -->
+        <main class="main-content" id="mainContent">
+            <!-- File Upload Area -->
+            <div id="uploadArea" class="upload-area">
+                <div class="upload-zone" id="uploadZone">
+                    <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="17 8 12 3 7 8"></polyline>
+                        <line x1="12" y1="3" x2="12" y2="15"></line>
+                    </svg>
+                    <h3>Upload Audio File</h3>
+                    <p>Drag and drop your audio file here, or click to browse</p>
+                    <input type="file" id="fileInput" accept="audio/*,.mp3,.m4a,.mp4,.ogg,.wav,.flac" hidden>
+                    <button id="browseBtn" class="btn-primary">Browse Files</button>
+                    <div class="upload-options" id="uploadOptions" style="display: none;">
+                        <label>
+                            <input type="checkbox" id="enableDiarization"> Enable Speaker Diarization
+                        </label>
+                        <label>
+                            <input type="checkbox" id="generateSummary"> Generate Summary
+                        </label>
+                        <label>
+                            <input type="checkbox" id="generateActionItems"> Generate Action Items
+                        </label>
+                        <button id="uploadBtn" class="btn-primary">Upload & Process</button>
+                    </div>
+                    <div id="uploadProgress" class="upload-progress" style="display: none;">
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="progressFill"></div>
+                        </div>
+                        <p id="progressText">Processing...</p>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Conversation Content -->
+            <div id="conversationContent" class="conversation-content" style="display: none;">
+                <div class="content-header">
+                    <h2 id="conversationTitle"></h2>
+                    <div class="tab-navigation" id="tabNavigation">
+                        <button class="tab-btn active" data-tab="transcript">Transcript</button>
+                        <button class="tab-btn" data-tab="summary" id="summaryTab" style="display: none;">Summary</button>
+                        <button class="tab-btn" data-tab="actionItems" id="actionItemsTab" style="display: none;">Action Items</button>
+                    </div>
+                </div>
+                
+                <!-- Audio Player -->
+                <div class="audio-player-container" id="audioPlayerContainer" style="display: none;">
+                    <audio id="audioPlayer"></audio>
+                    <div class="audio-controls">
+                        <button id="playPauseBtn" class="control-btn">▶</button>
+                        <span id="currentTime">0:00</span>
+                        <input type="range" id="seekBar" min="0" max="100" value="0" class="seek-bar">
+                        <span id="duration">0:00</span>
+                        <select id="playbackSpeed" class="speed-select">
+                            <option value="0.5">0.5x</option>
+                            <option value="1" selected>1x</option>
+                            <option value="1.25">1.25x</option>
+                            <option value="1.5">1.5x</option>
+                            <option value="2">2x</option>
+                        </select>
+                        <label for="volumeControl" class="volume-label">Volume:</label>
+                        <input type="range" id="volumeControl" min="0" max="100" value="100" class="volume-slider">
+                    </div>
+                </div>
+                
+                <!-- Tab Content -->
+                <div class="tab-content">
+                    <div id="transcriptTab" class="tab-pane active">
+                        <div id="transcriptContent" class="transcript-content"></div>
+                    </div>
+                    <div id="summaryTab" class="tab-pane">
+                        <div id="summaryContent" class="summary-content"></div>
+                    </div>
+                    <div id="actionItemsTab" class="tab-pane">
+                        <div id="actionItemsContent" class="action-items-content"></div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+    
+    <!-- New Profile Modal -->
+    <div id="profileModal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <h3>Create New Profile</h3>
+            <input type="text" id="profileNameInput" placeholder="Profile Name" required>
+            <input type="text" id="profileDisplayNameInput" placeholder="Display Name (optional)">
+            <div class="modal-actions">
+                <button id="createProfileBtn" class="btn-primary">Create</button>
+                <button id="cancelProfileBtn" class="btn-secondary">Cancel</button>
+            </div>
+        </div>
+    </div>
+    
+    <script src="/static/app.js"></script>
+</body>
+</html>
