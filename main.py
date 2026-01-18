@@ -55,7 +55,8 @@ async def startup_event():
 
 
 # Mount static files
-app.mount("/static", StaticFiles(directory="static"), name="static")
+static_dir = Path(__file__).parent / "static"
+app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
 
 # Background processing function
@@ -715,5 +716,18 @@ async def delete_api_key(key_id: int, db: Session = Depends(get_db)):
 @app.get("/", response_class=HTMLResponse)
 async def read_root():
     """Serve main web interface."""
-    with open("templates/index.html", "r") as f:
-        return HTMLResponse(content=f.read())
+    template_path = Path(__file__).parent / "templates" / "index_svelte.html"
+    assets_dir = Path(__file__).parent / "static" / "assets"
+    
+    # Use fixed CSS filename
+    css_file_path = assets_dir / "main.css"
+    
+    with open(template_path, "r") as f:
+        html = f.read()
+    
+    # Inject CSS link if found
+    if css_file_path.exists():
+        css_link = '  <link rel="stylesheet" href="/static/assets/main.css">\n'
+        html = html.replace("</head>", f"{css_link}</head>")
+    
+    return HTMLResponse(content=html)
