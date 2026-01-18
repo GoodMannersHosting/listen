@@ -115,5 +115,7 @@ class ProcessingJob(Base):
     job_type = Column(String, nullable=False)  # e.g., "transcription", "summarization", "action_items", "diarization"
     status = Column(String, default="pending")  # pending, processing, completed, failed
     progress = Column(Integer, default=0)  # Progress percentage (0-100)
+    total_chunks = Column(Integer, nullable=True)  # Total number of audio chunks to process
+    current_chunk = Column(Integer, nullable=True)  # Current chunk being processed
     result = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())

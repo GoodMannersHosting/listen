@@ -1,5 +1,5 @@
 <script>
-  import { createEventDispatcher } from 'svelte';
+  import { createEventDispatcher, onMount } from 'svelte';
   import { profiles, currentProfile, conversations, sidebarCollapsed, currentConversation } from '../stores';
   import { api } from '../api';
   import { formatDate } from '../utils';
@@ -17,6 +17,19 @@
   $: if ($currentProfile) {
     loadConversations($currentProfile.id);
   }
+
+  // Listen for refresh events from upload completion
+  onMount(() => {
+    const handleRefresh = () => {
+      if ($currentProfile) {
+        loadConversations($currentProfile.id);
+      }
+    };
+    window.addEventListener('refreshConversations', handleRefresh);
+    return () => {
+      window.removeEventListener('refreshConversations', handleRefresh);
+    };
+  });
 
   function toggleSidebar() {
     sidebarCollapsed.update(c => !c);

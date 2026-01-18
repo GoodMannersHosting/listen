@@ -5,6 +5,7 @@ import tempfile
 from pathlib import Path
 from typing import Optional, List
 from datetime import datetime
+import asyncio
 import aiofiles
 
 from fastapi import FastAPI, File, UploadFile, Depends, HTTPException, Query, Form, BackgroundTasks
@@ -28,7 +29,7 @@ from schemas import (
 )
 from config import settings
 from audio_processor import chunk_audio, get_audio_duration
-from transcriber import get_transcriber
+from transcriber import get_transcriber, TranscriptResult, TranscriptSegment as TranscriptSegmentData
 from diarization_service import get_diarization_service
 from llm_service import get_llm_service
 
@@ -59,7 +60,7 @@ static_dir = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
 
-# Background processing function
+# Background processing function (async with blocking ops in thread pool)
 async def process_audio_background(
     conversation_id: int,
     audio_file_path: str,
@@ -72,47 +73,112 @@ async def process_audio_background(
 ):
     """Background task to process audio file."""
     from database import SessionLocal
+    
+    # Run blocking operations in thread pool executor
+    loop = asyncio.get_event_loop()
+    
+    # Define a synchronous function for the blocking parts
+    def process_blocking_parts():
+        db = SessionLocal()
+        try:
+            # Update job status to processing
+            job = db.query(ProcessingJob).filter(ProcessingJob.id == job_id).first()
+            if job:
+                job.status = "processing"
+                job.progress = 5  # Started processing
+                db.commit()
+            
+            # Get audio duration (5-10%)
+            duration = get_audio_duration(audio_file_path)
+            if job:
+                job.progress = 10
+                db.commit()
+            
+            # Chunk audio if needed (10-15%)
+            chunks = chunk_audio(audio_file_path, chunk_duration=settings.audio_chunk_duration)
+            num_chunks = len(chunks)
+            if job:
+                job.total_chunks = num_chunks
+                job.current_chunk = 0
+                job.progress = 15
+                db.commit()
+            
+            # Transcribe with progress tracking
+            transcriber = get_transcriber()
+            if num_chunks > 1:
+                # Track progress per chunk (15-80% for transcription)
+                # Process chunks individually to track progress
+                all_segments = []
+                full_text_parts = []
+                language = None
+                
+                for chunk_idx, (chunk_path, start_offset, end_offset) in enumerate(chunks, 1):
+                    # Update current chunk
+                    if job:
+                        job.current_chunk = chunk_idx
+                        # Progress: 15% + (65% * current_chunk / total_chunks)
+                        job.progress = int(15 + (65 * chunk_idx / num_chunks))
+                        db.commit()
+                    
+                    # Transcribe this chunk
+                    chunk_result = transcriber.transcribe(chunk_path)
+                    
+                    if language is None and hasattr(chunk_result, 'language'):
+                        language = chunk_result.language
+                    
+                    # Adjust segment timestamps by start_offset
+                    if chunk_result.segments:
+                        for seg in chunk_result.segments:
+                            all_segments.append(
+                                TranscriptSegmentData(
+                                    text=seg.text,
+                                    start=seg.start + start_offset,
+                                    end=seg.end + start_offset,
+                                    confidence=seg.confidence
+                                )
+                            )
+                    
+                    if chunk_result.text:
+                        full_text_parts.append(chunk_result.text)
+                
+                # Combine results
+                full_text = " ".join(full_text_parts)
+                transcript_result = TranscriptResult(
+                    text=full_text,
+                    segments=all_segments,
+                    language=language
+                )
+            else:
+                # Single chunk transcription (15-80%)
+                if job:
+                    job.total_chunks = 1
+                    job.current_chunk = 1
+                    job.progress = 40  # Mid-point for single chunk
+                    db.commit()
+                transcript_result = transcriber.transcribe(chunks[0][0])
+                if job:
+                    job.progress = 80
+                    db.commit()
+            
+            return transcript_result, duration
+            
+        except Exception as e:
+            db.close()
+            raise e
+        finally:
+            # Don't close db here - we'll create a new one for async parts
+            pass
+    
+    # Run blocking parts (transcription) in thread pool
+    result = await loop.run_in_executor(None, process_blocking_parts)
+    transcript_result, duration = result
+    
+    # Create new database session for async operations (can't share sessions across threads)
     db = SessionLocal()
     try:
-        # Update job status to processing
-        job = db.query(ProcessingJob).filter(ProcessingJob.id == job_id).first()
-        if job:
-            job.status = "processing"
-            job.progress = 5  # Started processing
-            db.commit()
-        
-        # Get audio duration (5-10%)
-        duration = get_audio_duration(audio_file_path)
-        if job:
-            job.progress = 10
-            db.commit()
-        
-        # Chunk audio if needed (10-15%)
-        chunks = chunk_audio(audio_file_path, chunk_duration=settings.audio_chunk_duration)
-        num_chunks = len(chunks)
-        if job:
-            job.progress = 15
-            db.commit()
-        
-        # Transcribe with progress tracking
-        transcriber = get_transcriber()
-        if num_chunks > 1:
-            # Track progress per chunk (15-80% for transcription)
-            transcript_result = transcriber.transcribe_chunks(chunks)
-            # Note: If transcriber.transcribe_chunks doesn't support progress callbacks,
-            # we'll update progress after completion
-            if job:
-                job.progress = 80
-                db.commit()
-        else:
-            # Single chunk transcription (15-80%)
-            transcript_result = transcriber.transcribe(chunks[0][0])
-            if job:
-                job.progress = 80
-                db.commit()
-        
-        # Get conversation
+        # Get conversation and job
         conversation = db.query(Conversation).filter(Conversation.id == conversation_id).first()
+        job = db.query(ProcessingJob).filter(ProcessingJob.id == job_id).first()
         if not conversation:
             raise ValueError(f"Conversation {conversation_id} not found")
         
@@ -146,25 +212,32 @@ async def process_audio_background(
             )
             db.add(db_segment)
         
-        # Speaker diarization if enabled
+        db.commit()
+        
+        # Speaker diarization if enabled (run in thread pool as it's blocking)
         if diarization and settings.enable_diarization:
-            diarization_service = get_diarization_service()
-            if diarization_service.is_enabled():
-                diarization_segments = diarization_service.diarize(audio_file_path)
-                # Align speakers with transcript segments
-                trans_segments = [
-                    {"start_time": seg.start, "end_time": seg.end, "text": seg.text}
-                    for seg in transcript_result.segments
-                ]
-                aligned = diarization_service.align_speakers_to_transcript(trans_segments, diarization_segments)
-                
-                # Update segments with speaker labels
-                for i, seg_data in enumerate(aligned):
-                    if i < len(transcript_result.segments) and "speaker_label" in seg_data:
-                        db.query(TranscriptSegment).filter(
-                            TranscriptSegment.transcript_id == transcript.id,
-                            TranscriptSegment.start_time == transcript_result.segments[i].start
-                        ).update({"speaker_label": seg_data["speaker_label"]})
+            def run_diarization():
+                diarization_service = get_diarization_service()
+                if diarization_service.is_enabled():
+                    diarization_segments = diarization_service.diarize(audio_file_path)
+                    # Align speakers with transcript segments
+                    trans_segments = [
+                        {"start_time": seg.start, "end_time": seg.end, "text": seg.text}
+                        for seg in transcript_result.segments
+                    ]
+                    aligned = diarization_service.align_speakers_to_transcript(trans_segments, diarization_segments)
+                    return aligned
+                return []
+            
+            aligned = await loop.run_in_executor(None, run_diarization)
+            
+            # Update segments with speaker labels
+            for i, seg_data in enumerate(aligned):
+                if i < len(transcript_result.segments) and "speaker_label" in seg_data:
+                    db.query(TranscriptSegment).filter(
+                        TranscriptSegment.transcript_id == transcript.id,
+                        TranscriptSegment.start_time == transcript_result.segments[i].start
+                    ).update({"speaker_label": seg_data["speaker_label"]})
         
         db.commit()
         
@@ -173,7 +246,7 @@ async def process_audio_background(
             job.progress = 85
             db.commit()
         
-        # Generate summary if requested (85-95%)
+        # Generate summary if requested (85-95%) - these are async
         if generate_summary:
             llm_service = get_llm_service()
             try:
@@ -193,7 +266,7 @@ async def process_audio_background(
             except Exception as e:
                 print(f"Warning: Summary generation failed: {e}")
         
-        # Generate action items if requested (92-97%)
+        # Generate action items if requested (92-97%) - these are async
         if generate_action_items:
             llm_service = get_llm_service()
             try:
@@ -468,18 +541,19 @@ async def upload_audio(
     conversation.audio_file_path = audio_file_path
     db.commit()
     
-    # Create processing job
+    # Create processing job with initial status
     job = ProcessingJob(
         conversation_id=conversation.id,
         transcript_id=None,  # Will be updated when transcript is created
         job_type="transcription",
-        status="pending"
+        status="pending",
+        progress=5  # Initial progress after upload
     )
     db.add(job)
     db.commit()
     db.refresh(job)
     
-    # Start background processing
+    # Start background processing (BackgroundTasks runs after response is sent)
     background_tasks.add_task(
         process_audio_background,
         conversation.id,
@@ -516,6 +590,8 @@ async def get_job_status(job_id: int, db: Session = Depends(get_db)):
         job_id=job.id,
         status=job.status,
         progress=job.progress or 0,
+        total_chunks=job.total_chunks,
+        current_chunk=job.current_chunk,
         conversation_id=job.conversation_id,
         transcript_id=job.transcript_id,
         message=f"Job status: {job.status}",
@@ -537,6 +613,8 @@ async def get_conversation_job(conversation_id: int, db: Session = Depends(get_d
         job_id=job.id,
         status=job.status,
         progress=job.progress or 0,
+        total_chunks=job.total_chunks,
+        current_chunk=job.current_chunk,
         conversation_id=job.conversation_id,
         transcript_id=job.transcript_id,
         message=f"Job status: {job.status}",

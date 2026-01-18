@@ -152,6 +152,8 @@ class JobStatusResponse(BaseModel):
     job_id: int
     status: str  # pending, processing, completed, failed
     progress: int = 0  # Progress percentage (0-100)
+    total_chunks: Optional[int] = None  # Total number of audio chunks
+    current_chunk: Optional[int] = None  # Current chunk being processed
     conversation_id: Optional[int] = None
     transcript_id: Optional[int] = None
     message: Optional[str] = None

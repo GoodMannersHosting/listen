@@ -81,11 +81,12 @@
         progressText = `Uploading file... ${percent}%`;
       });
 
-      uploadProgress = 5;
-      progressText = 'Upload complete. Starting processing...';
+      // Upload complete - transition to processing
+      uploadProgress = 10;
+      progressText = 'Upload complete. Initializing processing...';
 
       if (result.status === 'processing' && result.conversation_id) {
-        progressText = 'Processing audio... This may take a few minutes.';
+        // Start polling immediately with initial status
         pollJobStatus(result.conversation_id);
       } else if (result.conversation_id) {
         dispatch('conversationReady', { conversationId: result.conversation_id });
@@ -104,21 +105,43 @@
     const poll = async () => {
       try {
         const job = await api.get(`/conversations/${conversationId}/job`);
-        uploadProgress = job.progress || 0;
+        
+        // Update progress - ensure it's at least 10% if processing has started
+        uploadProgress = Math.max(job.progress || 0, job.status === 'processing' ? 10 : 0);
 
         if (job.status === 'completed') {
           progressText = 'Processing complete!';
           uploadProgress = 100;
-          dispatch('conversationReady', { conversationId });
-          showProgress = false;
+          // Small delay to show completion
+          setTimeout(() => {
+            dispatch('conversationReady', { conversationId });
+            showProgress = false;
+            // Refresh conversations list by dispatching event
+            window.dispatchEvent(new CustomEvent('refreshConversations'));
+          }, 500);
           return;
         } else if (job.status === 'failed') {
           progressText = `Processing failed: ${job.error || 'Unknown error'}`;
           alert(`Processing failed: ${job.error || 'Unknown error'}`);
           showProgress = false;
           return;
+        } else if (job.status === 'pending') {
+          // Job is still pending - show waiting message
+          progressText = 'Waiting for processing to start...';
+          uploadProgress = 10;
         } else {
-          progressText = `Processing... ${uploadProgress}%`;
+          // Show detailed progress with chunk info if available
+          if (job.total_chunks && job.current_chunk !== null && job.current_chunk !== undefined) {
+            progressText = `Processing chunk ${job.current_chunk} of ${job.total_chunks}... (${uploadProgress}%)`;
+          } else if (uploadProgress < 15) {
+            progressText = `Preparing audio... (${uploadProgress}%)`;
+          } else if (uploadProgress < 85) {
+            progressText = `Transcribing audio... (${uploadProgress}%)`;
+          } else if (uploadProgress < 100) {
+            progressText = `Finalizing transcript${generateSummary || generateActionItems ? ' and generating content' : ''}... (${uploadProgress}%)`;
+          } else {
+            progressText = `Processing... (${uploadProgress}%)`;
+          }
         }
 
         attempts++;
@@ -128,13 +151,17 @@
           progressText = 'Processing is taking longer than expected. Please check back later.';
         }
       } catch (error) {
+        console.error('Polling error:', error);
         attempts++;
         if (attempts < maxAttempts) {
           setTimeout(poll, 2000);
+        } else {
+          progressText = 'Error checking processing status. Please refresh the page.';
         }
       }
     };
 
+    // Start polling immediately
     poll();
   }
 </script>

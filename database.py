@@ -53,6 +53,20 @@ def init_db():
                 conn.commit()
                 print("Added progress column to processing_jobs table")
         
+        # Add total_chunks column if it doesn't exist
+        if 'total_chunks' not in columns:
+            with engine.connect() as conn:
+                conn.execute(text("ALTER TABLE processing_jobs ADD COLUMN total_chunks INTEGER"))
+                conn.commit()
+                print("Added total_chunks column to processing_jobs table")
+        
+        # Add current_chunk column if it doesn't exist
+        if 'current_chunk' not in columns:
+            with engine.connect() as conn:
+                conn.execute(text("ALTER TABLE processing_jobs ADD COLUMN current_chunk INTEGER"))
+                conn.commit()
+                print("Added current_chunk column to processing_jobs table")
+        
         # SQLite doesn't support ALTER COLUMN, so we need to recreate the table
         # Check if transcript_id is NOT NULL when it should be nullable
         if 'transcript_id' in columns and not columns['transcript_id'].get('nullable', True):
