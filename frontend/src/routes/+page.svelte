@@ -170,13 +170,15 @@
     }
   }
 
-  function getTopJob() {
-    if (!activeJobs?.length) return null;
+  function getTopJob(jobs) {
+    if (!jobs?.length) return null;
     // FIFO: show the oldest job first (created_at asc from the API).
-    return activeJobs[0];
+    return jobs[0];
   }
 
-  $: topJob = getTopJob();
+  // IMPORTANT: in Svelte's reactive assignments, dependencies are determined statically.
+  // Pass `activeJobs` explicitly so changes re-compute `topJob`.
+  $: topJob = getTopJob(activeJobs);
 
   async function onUploadSubmit(e) {
     e.preventDefault();
