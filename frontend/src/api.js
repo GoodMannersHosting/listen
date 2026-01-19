@@ -19,8 +19,9 @@ async function request(method, url, body, headers = {}) {
 }
 
 export const api = {
-  listUploads() {
-    return request('GET', '/uploads');
+  listUploads(q) {
+    const qs = q && q.trim() ? `?${new URLSearchParams({ q: q.trim() }).toString()}` : '';
+    return request('GET', `/uploads${qs}`);
   },
   getUpload(id) {
     return request('GET', `/uploads/${id}`);
@@ -28,10 +29,13 @@ export const api = {
   getSegments(id) {
     return request('GET', `/uploads/${id}/segments`);
   },
-  renameUpload(id, display_name) {
-    return request('PATCH', `/uploads/${id}`, JSON.stringify({ display_name }), {
+  updateUpload(id, payload) {
+    return request('PATCH', `/uploads/${id}`, JSON.stringify(payload), {
       'Content-Type': 'application/json'
     });
+  },
+  renameUpload(id, display_name) {
+    return this.updateUpload(id, { display_name });
   },
   deleteUpload(id) {
     return request('DELETE', `/uploads/${id}`);

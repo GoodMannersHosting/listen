@@ -6,6 +6,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -18,7 +19,7 @@ from app.schemas import (
     UploadListItem,
     UploadReprocessRequest,
     UploadReprocessResponse,
-    UploadRenameRequest,
+    UploadUpdateRequest,
 )
 from app.services.storage import ensure_dir, safe_filename, delete_tree
 from worker.celery_app import celery_app
@@ -26,9 +27,60 @@ from worker.celery_app import celery_app
 router = APIRouter(prefix="/uploads", tags=["uploads"])
 
 
+def _parse_tags_csv(s: str | None) -> list[str]:
+    if not s:
+        return []
+    out: list[str] = []
+    seen = set()
+    for raw in (s or "").split(","):
+        t = raw.strip()
+        if not t:
+            continue
+        if t in seen:
+            continue
+        seen.add(t)
+        out.append(t)
+    return out
+
+
+def _normalize_tags(tags: list[str] | None) -> str | None:
+    if tags is None:
+        return None
+    out: list[str] = []
+    seen = set()
+    for raw in tags:
+        if raw is None:
+            continue
+        t = str(raw).strip().lower()
+        if not t:
+            continue
+        if "," in t:
+            t = t.replace(",", " ")
+            t = " ".join(t.split())
+        if not t:
+            continue
+        if t in seen:
+            continue
+        seen.add(t)
+        out.append(t)
+    out = out[:20]
+    return ",".join(out) if out else ""
+
 @router.get("", response_model=list[UploadListItem])
-def list_uploads(db: Session = Depends(get_db)) -> list[UploadListItem]:
-    rows = db.query(Upload).order_by(Upload.created_at.desc()).all()
+def list_uploads(q: Optional[str] = None, db: Session = Depends(get_db)) -> list[UploadListItem]:
+    qry = db.query(Upload)
+    if q:
+        qn = q.strip().lower()
+        if qn:
+            like = f"%{qn}%"
+            qry = qry.filter(
+                or_(
+                    func.lower(Upload.display_name).like(like),
+                    func.lower(Upload.original_filename).like(like),
+                    func.lower(func.coalesce(Upload.tags, "")).like(like),
+                )
+            )
+    rows = qry.order_by(Upload.created_at.desc()).all()
     return [
         UploadListItem(
             id=u.id,
@@ -37,6 +89,7 @@ def list_uploads(db: Session = Depends(get_db)) -> list[UploadListItem]:
             created_at=u.created_at,
             duration_seconds=u.duration_seconds,
             language=u.language,
+            tags=_parse_tags_csv(u.tags),
         )
         for u in rows
     ]
@@ -56,6 +109,7 @@ def get_upload(upload_id: int, db: Session = Depends(get_db)) -> UploadDetail:
         created_at=u.created_at,
         duration_seconds=u.duration_seconds,
         language=u.language,
+        tags=_parse_tags_csv(u.tags),
         summary=u.summary,
         action_items=u.action_items,
         transcript_text=tr.text if tr else None,
@@ -82,11 +136,19 @@ def get_audio(upload_id: int, db: Session = Depends(get_db)):
 
 
 @router.patch("/{upload_id}")
-def rename_upload(upload_id: int, req: UploadRenameRequest, db: Session = Depends(get_db)) -> dict:
+def update_upload(upload_id: int, req: UploadUpdateRequest, db: Session = Depends(get_db)) -> dict:
     u = db.query(Upload).filter(Upload.id == upload_id).first()
     if not u:
         raise HTTPException(status_code=404, detail="Upload not found")
-    u.display_name = req.display_name.strip()
+    changed = False
+    if req.display_name is not None:
+        u.display_name = req.display_name.strip()
+        changed = True
+    if req.tags is not None:
+        u.tags = _normalize_tags(req.tags)
+        changed = True
+    if not changed:
+        raise HTTPException(status_code=400, detail="No fields to update")
     u.updated_at = datetime.utcnow()
     db.commit()
     return {"ok": True}
@@ -133,6 +195,7 @@ def create_upload(
         stored_path="",
         content_type=file.content_type,
         size_bytes=None,
+        tags=None,
     )
     db.add(u)
     db.commit()

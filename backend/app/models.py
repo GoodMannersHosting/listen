@@ -40,6 +40,9 @@ class Upload(Base):
     summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     action_items: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
 
+    # Comma-separated tags (stored lowercase). Example: "meeting,finance,urgent"
+    tags: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
     jobs: Mapped[list["Job"]] = relationship(back_populates="upload", cascade="all, delete-orphan")
     transcript: Mapped[Optional["Transcript"]] = relationship(back_populates="upload", cascade="all, delete-orphan", uselist=False)
     segments: Mapped[list["TranscriptSegment"]] = relationship(back_populates="upload", cascade="all, delete-orphan")

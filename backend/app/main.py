@@ -7,8 +7,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.db import db_healthcheck, engine
-from app.models import Base, Prompt
+from app.db import db_healthcheck, engine, ensure_schema
+from app.models import Prompt
 from app.routes.jobs import router as jobs_router
 from app.routes.prompts import router as prompts_router
 from app.routes.uploads import router as uploads_router
@@ -58,7 +58,7 @@ Be factual and do not invent details.
 
 def create_app() -> FastAPI:
     os.makedirs(settings.upload_dir, exist_ok=True)
-    Base.metadata.create_all(bind=engine)
+    ensure_schema()
     _load_default_prompts()
 
     app = FastAPI(title="Listen API", version="0.1.0")

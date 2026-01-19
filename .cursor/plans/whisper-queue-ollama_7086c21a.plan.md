@@ -56,8 +56,8 @@ flowchart TD
 
 - **Uploads/records**
   - `POST /api/uploads` (multipart file + options: `summarize`, `action_items`, `model`, `prompt_id`s)
-  - `GET /api/uploads` (list)
-  - `PATCH /api/uploads/{id}` (rename display name)
+  - `GET /api/uploads` (list; supports `?q=...` to search by name + tags)
+  - `PATCH /api/uploads/{id}` (update: rename display name and/or set tags)
   - `GET /api/uploads/{id}` (details incl transcript/summary/action items)
 - **Jobs/progress**
   - `GET /api/jobs/{id}` (status, progress %, phase, timestamps)
@@ -100,6 +100,9 @@ flowchart TD
   - progress bar + job state
 - Library panel:
   - list uploads (renamable)
+  - add/edit tags on recordings (stored in SQLite)
+  - search library by recording name or tag
+  - library list scrolls within viewport (does not infinitely grow page)
   - transcript viewer with timestamps
   - summary + action items tabs when available
 - Prompt editor:

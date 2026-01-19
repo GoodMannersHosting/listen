@@ -29,6 +29,8 @@
 
   let uploading = false;
   let error = '';
+  let searchQuery = '';
+  let searchTimer = null;
 
   function normalizeSummaryMarkdown(md) {
     if (!md) return md;
@@ -132,7 +134,7 @@
   $: showJobBar = !!topJob || (jobStats?.active ?? 0) > 0;
 
   async function refreshUploads() {
-    uploads = await api.listUploads();
+    uploads = await api.listUploads(searchQuery);
   }
 
   async function selectUpload(id) {
@@ -206,6 +208,60 @@
     await api.renameUpload(current.id, name.trim());
     await refreshUploads();
     await selectUpload(current.id);
+  }
+
+  function parseTagsInput(s) {
+    const raw = (s || '').split(',').map((t) => t.trim()).filter(Boolean);
+    const seen = new Set();
+    const out = [];
+    for (const t0 of raw) {
+      const t = t0.toLowerCase();
+      if (!t) continue;
+      if (seen.has(t)) continue;
+      seen.add(t);
+      out.push(t);
+      if (out.length >= 20) break;
+    }
+    return out;
+  }
+
+  let showTags = false;
+  let tagsInput = '';
+  let tagsBusy = false;
+
+  function openTags() {
+    if (!current) return;
+    tagsInput = (current.tags || []).join(', ');
+    showTags = true;
+  }
+
+  function closeTagsOnKeydown(e) {
+    if (e.key === 'Escape') showTags = false;
+  }
+
+  async function saveTags() {
+    if (!current) return;
+    error = '';
+    tagsBusy = true;
+    try {
+      const tags = parseTagsInput(tagsInput);
+      await api.updateUpload(current.id, { tags });
+      showTags = false;
+      await refreshUploads();
+      await selectUpload(current.id);
+    } catch (e) {
+      error = e.message || 'Saving tags failed';
+    } finally {
+      tagsBusy = false;
+    }
+  }
+
+  function onSearchInput(e) {
+    searchQuery = e.target.value;
+    if (searchTimer) clearTimeout(searchTimer);
+    searchTimer = setTimeout(async () => {
+      await refreshUploads();
+    }, 200);
   }
 
   function openReprocess() {
@@ -303,6 +359,7 @@
   onDestroy(() => {
     if (activeJobsTimer) clearInterval(activeJobsTimer);
     if (statsTimer) clearInterval(statsTimer);
+    if (searchTimer) clearTimeout(searchTimer);
   });
 </script>
 
@@ -340,12 +397,30 @@
     </form>
 
     <div class="list">
-      <div class="listHeader">Library</div>
+      <div class="listHeaderRow">
+        <div class="listHeader">Library</div>
+        <input
+          class="input search"
+          placeholder="Search name or tag…"
+          value={searchQuery}
+          on:input={onSearchInput}
+        />
+      </div>
       {#each uploads as u}
         <div class="item" class:active={current?.id === u.id}>
           <button class="itemMain" on:click={() => selectUpload(u.id)}>
             <div class="itemName">{u.display_name}</div>
             <div class="itemMeta muted">{fmtDate(u.created_at)}</div>
+            {#if u.tags?.length}
+              <div class="tagRow">
+                {#each u.tags.slice(0, 4) as t}
+                  <span class="tag">{t}</span>
+                {/each}
+                {#if u.tags.length > 4}
+                  <span class="muted">+{u.tags.length - 4}</span>
+                {/if}
+              </div>
+            {/if}
           </button>
           <button class="btn danger" on:click={() => deleteUpload(u)}>Del</button>
         </div>
@@ -411,6 +486,7 @@
         </div>
         <div class="headerActions">
           <button class="btn" on:click={openReprocess}>Re-process</button>
+          <button class="btn" on:click={openTags}>Tags</button>
           <button class="btn" on:click={renameCurrent}>Rename</button>
           <a class="btn" href={`/api/uploads/${current.id}/audio`} target="_blank" rel="noreferrer">Audio</a>
         </div>
@@ -574,6 +650,40 @@
   </div>
 {/if}
 
+{#if showTags}
+  <div
+    class="modalBackdrop"
+    role="button"
+    tabindex="0"
+    on:keydown={closeTagsOnKeydown}
+    on:click|self={() => (showTags = false)}
+  >
+    <div class="modal" role="dialog" aria-modal="true" aria-label="Edit tags">
+      <div class="modalHeader">
+        <div class="h2">Tags</div>
+        <button class="btn" on:click={() => (showTags = false)}>Close</button>
+      </div>
+      <div class="modalBody" style="grid-template-columns: 1fr">
+        <div class="muted">Comma-separated tags. Stored in the database and searchable.</div>
+
+        <label class="label" for="tagsInputField" style="margin-top: 8px">Tags</label>
+        <input
+          id="tagsInputField"
+          class="input"
+          bind:value={tagsInput}
+          placeholder="e.g. meeting, finance, urgent"
+        />
+
+        <div style="display:flex; gap:8px; margin-top:10px">
+          <button class="btn primary" disabled={tagsBusy} on:click={saveTags}>
+            {tagsBusy ? 'Saving…' : 'Save tags'}
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+{/if}
+
 <style>
   .layout {
     display: grid;
@@ -614,7 +724,9 @@
   .label { font-size: 0.85rem; color: var(--muted); }
   .row { display: flex; gap: 10px; }
   .check { display: flex; gap: 8px; align-items: center; color: var(--text); font-size: 0.9rem; }
-  .list { padding: 12px; overflow: auto; }
+  .list { padding: 12px; overflow: auto; flex: 1; min-height: 0; }
+  .listHeaderRow { display: grid; gap: 8px; margin-bottom: 8px; }
+  .input.search { padding: 0.45rem 0.6rem; border-radius: 10px; }
   .listHeader { font-size: 0.85rem; color: var(--muted); margin-bottom: 8px; }
   .item {
     display: grid;
@@ -636,6 +748,15 @@
   }
   .itemName { font-weight: 600; }
   .itemMeta { font-size: 0.8rem; }
+  .tagRow { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+  .tag {
+    font-size: 0.75rem;
+    color: var(--muted);
+    border: 1px solid rgba(148,163,184,0.22);
+    background: rgba(148,163,184,0.08);
+    padding: 2px 6px;
+    border-radius: 999px;
+  }
   .main { padding: 18px; overflow: auto; }
   .jobBar {
     position: sticky;

@@ -13,6 +13,7 @@ class UploadListItem(BaseModel):
     created_at: datetime
     duration_seconds: Optional[float] = None
     language: Optional[str] = None
+    tags: list[str] = Field(default_factory=list)
 
 
 class UploadCreateResponse(BaseModel):
@@ -38,14 +39,16 @@ class UploadDetail(BaseModel):
     created_at: datetime
     duration_seconds: Optional[float] = None
     language: Optional[str] = None
+    tags: list[str] = Field(default_factory=list)
     summary: Optional[str] = None
     action_items: Optional[Any] = None
 
     transcript_text: Optional[str] = None
 
 
-class UploadRenameRequest(BaseModel):
-    display_name: str = Field(..., min_length=1, max_length=200)
+class UploadUpdateRequest(BaseModel):
+    display_name: Optional[str] = Field(None, min_length=1, max_length=200)
+    tags: Optional[list[str]] = None
 
 
 class JobStatus(BaseModel):
