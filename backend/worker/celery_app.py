@@ -9,7 +9,6 @@ celery_app = Celery(
     "listen",
     broker=settings.rabbitmq_url,
     backend=None,
-    include=["worker.tasks"],
 )
 
 celery_app.conf.update(

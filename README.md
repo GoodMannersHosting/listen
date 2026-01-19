@@ -15,10 +15,18 @@ Fresh rewrite designed to run as **multiple small containers** (no Kubernetes ma
 cp env.example .env
 ```
 
-2. Start services:
+2. Build images (Podman):
 
 ```bash
-docker compose up --build
+podman build -t listen-api:dev ./backend
+podman build -t listen-worker:dev -f ./backend/Dockerfile.worker ./backend
+podman build -t listen-frontend:dev ./frontend
+```
+
+3. Start services:
+
+```bash
+podman compose up -d
 ```
 
 3. Open:

@@ -50,6 +50,12 @@ uv.lock
 # Uploaded files
 uploads/
 tmp/
+*.wav
+*.mp3
+*.m4a
+*.ogg
+*.flac
+*.gz
 
 # Model caches
 .cache/

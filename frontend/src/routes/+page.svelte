@@ -128,6 +128,8 @@
   $: actionRows = normalizeActionItems(current?.action_items);
   $: actionCols = columnsForRows(actionRows || []);
   $: summaryMd = normalizeSummaryMarkdown(current?.summary);
+  $: topJobProgress = Math.max(0, Math.min(100, Number(topJob?.progress ?? 0)));
+  $: showJobBar = !!topJob || (jobStats?.active ?? 0) > 0;
 
   async function refreshUploads() {
     uploads = await api.listUploads();
@@ -183,10 +185,10 @@
     try {
       const fd = new FormData(e.target);
       const res = await api.createUpload(fd);
-      await refreshUploads();
-      await selectUpload(res.upload_id);
-      // Ensure the banner shows jobs FIFO (oldest first), not "last queued".
+      // Update the top job banner ASAP (avoids "job finished before banner appeared").
       await refreshActiveJobs();
+
+      await Promise.all([refreshUploads(), selectUpload(res.upload_id)]);
       e.target.reset();
     } catch (e) {
       error = e.message || 'Upload failed';
@@ -350,32 +352,50 @@
   </aside>
 
   <main class="main">
-    {#if topJob}
+    {#if showJobBar}
       <div class="jobBar">
-        <div class="jobTop">
+        {#if topJob}
+          <div class="jobTop">
+            <div>
+              <strong>Job:</strong>
+              {uploads.find((u) => u.id === topJob.upload_id)?.display_name ?? `Upload #${topJob.upload_id}`}
+              {#if activeJobs.length > 1}
+                <span class="muted" style="margin-left: 8px">({activeJobs.length} jobs)</span>
+              {/if}
+            </div>
+            <div class="muted">
+              {#if topJob.started_at}
+                Started {fmtShort(topJob.started_at)}
+              {:else}
+                Queued {fmtShort(topJob.created_at)}
+              {/if}
+            </div>
+          </div>
           <div>
-            <strong>Job:</strong>
-            {uploads.find((u) => u.id === topJob.upload_id)?.display_name ?? `Upload #${topJob.upload_id}`}
-            {#if activeJobs.length > 1}
-              <span class="muted" style="margin-left: 8px">({activeJobs.length} jobs)</span>
-            {/if}
+            <strong>Status:</strong> {topJob.status} {topJob.phase ? `(${topJob.phase})` : ''}
           </div>
           <div class="muted">
-            {#if topJob.started_at}
-              Started {fmtShort(topJob.started_at)}
-            {:else}
-              Queued {fmtShort(topJob.created_at)}
-            {/if}
+            {topJob.current_chunk ?? 0}/{topJob.total_chunks ?? 0} · {topJob.progress}%
           </div>
+        {:else}
+          <div class="jobTop">
+            <div>
+              <strong>Job:</strong> {jobStats?.active ?? 0} active
+            </div>
+            <div class="muted">Loading details…</div>
+          </div>
+          <div class="muted">Fetching job status…</div>
+        {/if}
+
+        <div class="progress" aria-label="Job progress">
+          <div
+            class="progressFill"
+            class:indeterminate={!topJob || (topJob.status === 'queued' && topJobProgress === 0)}
+            style={`width:${!topJob ? 35 : topJobProgress === 0 && topJob.status === 'queued' ? 35 : topJobProgress}%`}
+          ></div>
         </div>
-        <div>
-          <strong>Status:</strong> {topJob.status} {topJob.phase ? `(${topJob.phase})` : ''}
-        </div>
-        <div class="muted">
-          {topJob.current_chunk ?? 0}/{topJob.total_chunks ?? 0} · {topJob.progress}%
-        </div>
-        <div class="progress"><div class="progressFill" style={`width:${topJob.progress}%`}></div></div>
-        {#if topJob.error}
+
+        {#if topJob?.error}
           <div class="error">{topJob.error}</div>
         {/if}
       </div>
@@ -629,8 +649,19 @@
     gap: 6px;
   }
   .jobTop { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
-  .progress { height: 8px; border-radius: 999px; background: rgba(148,163,184,0.15); overflow: hidden; }
+  .progress { height: 10px; border-radius: 999px; background: rgba(148,163,184,0.15); overflow: hidden; }
   .progressFill { height: 100%; background: var(--accent); }
+  .progressFill.indeterminate {
+    background: linear-gradient(90deg, rgba(16,185,129,0.15), var(--accent), rgba(16,185,129,0.15));
+    animation: progress-indeterminate 1.2s ease-in-out infinite;
+  }
+  @keyframes progress-indeterminate {
+    0% { transform: translateX(-120%); }
+    100% { transform: translateX(320%); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .progressFill.indeterminate { animation: none; }
+  }
   .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
   .headerActions { display: flex; gap: 8px; }
   .h1 { font-size: 1.3rem; font-weight: 800; }

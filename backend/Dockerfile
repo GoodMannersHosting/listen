@@ -1,19 +1,19 @@
-FROM python:3.12-slim
+FROM python:3.12-alpine
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app
 
 # System deps: ffmpeg for audio processing
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apk add --no-cache \
     ffmpeg \
     ca-certificates \
-  && rm -rf /var/lib/apt/lists/*
+  && true
 
 WORKDIR /app
 
-COPY requirements.txt /app/requirements.txt
-RUN pip install --no-cache-dir -r /app/requirements.txt
+COPY requirements.api.txt /app/requirements.api.txt
+RUN pip install --no-cache-dir -r /app/requirements.api.txt
 
 COPY app /app/app
 COPY worker /app/worker

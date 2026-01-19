@@ -23,14 +23,14 @@ services:
       - API_HOST=${API_HOST}
       - API_PORT=${API_PORT}
     volumes:
-      - data:/data
+      - data:/data:U
     depends_on:
       - rabbitmq
     ports:
       - "8000:8000"
 
   worker:
-    image: localhost/listen-api:dev
+    image: localhost/listen-worker:dev
     env_file:
       - .env
     environment:
@@ -45,10 +45,10 @@ services:
       - OPENWEBUI_TEMPERATURE=${OPENWEBUI_TEMPERATURE:-0.7}
       - OPENWEBUI_MAX_TOKENS=${OPENWEBUI_MAX_TOKENS:-65535}
     volumes:
-      - data:/data
+      - data:/data:U
     depends_on:
       - rabbitmq
-    command: ["celery", "-A", "worker.celery_app", "worker", "--loglevel=INFO", "--concurrency=2"]
+    command: ["celery", "-A", "worker.celery_worker", "worker", "--loglevel=INFO", "--concurrency=2"]
 
   frontend:
     image: localhost/listen-frontend:dev
