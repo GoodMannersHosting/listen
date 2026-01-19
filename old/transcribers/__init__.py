@@ -1,1 +1,0 @@
-"""Transcription service implementations."""
