@@ -1,0 +1,62 @@
+services:
+  rabbitmq:
+    image: docker.io/library/rabbitmq:3-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+
+  api:
+    image: localhost/listen-api:dev
+    env_file:
+      - .env
+    environment:
+      - RABBITMQ_URL=${RABBITMQ_URL}
+      - DATABASE_URL=sqlite:////data/listen.db
+      - UPLOAD_DIR=/data/uploads
+      - WHISPER_MODEL=${WHISPER_MODEL}
+      - AUDIO_CHUNK_SECONDS=${AUDIO_CHUNK_SECONDS}
+      - OPENWEBUI_URL=${OPENWEBUI_URL}
+      - OPENWEBUI_API_KEY=${OPENWEBUI_API_KEY}
+      - OPENWEBUI_DEFAULT_MODEL=${OPENWEBUI_DEFAULT_MODEL:-gpt-oss:20b}
+      - OPENWEBUI_TEMPERATURE=${OPENWEBUI_TEMPERATURE:-0.7}
+      - OPENWEBUI_MAX_TOKENS=${OPENWEBUI_MAX_TOKENS:-65535}
+      - API_HOST=${API_HOST}
+      - API_PORT=${API_PORT}
+    volumes:
+      - data:/data
+    depends_on:
+      - rabbitmq
+    ports:
+      - "8000:8000"
+
+  worker:
+    image: localhost/listen-api:dev
+    env_file:
+      - .env
+    environment:
+      - RABBITMQ_URL=${RABBITMQ_URL}
+      - DATABASE_URL=sqlite:////data/listen.db
+      - UPLOAD_DIR=/data/uploads
+      - WHISPER_MODEL=${WHISPER_MODEL}
+      - AUDIO_CHUNK_SECONDS=${AUDIO_CHUNK_SECONDS}
+      - OPENWEBUI_URL=${OPENWEBUI_URL}
+      - OPENWEBUI_API_KEY=${OPENWEBUI_API_KEY}
+      - OPENWEBUI_DEFAULT_MODEL=${OPENWEBUI_DEFAULT_MODEL:-gpt-oss:20b}
+      - OPENWEBUI_TEMPERATURE=${OPENWEBUI_TEMPERATURE:-0.7}
+      - OPENWEBUI_MAX_TOKENS=${OPENWEBUI_MAX_TOKENS:-65535}
+    volumes:
+      - data:/data
+    depends_on:
+      - rabbitmq
+    command: ["celery", "-A", "worker.celery_app", "worker", "--loglevel=INFO", "--concurrency=2"]
+
+  frontend:
+    image: localhost/listen-frontend:dev
+    depends_on:
+      - api
+    ports:
+      - "5173:80"
+
+volumes:
+  data:
+

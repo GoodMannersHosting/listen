@@ -1,0 +1,49 @@
+:root {
+  --bg: #0f172a;
+  --panel: #111827;
+  --panel2: #0b1220;
+  --text: #e5e7eb;
+  --muted: #94a3b8;
+  --border: rgba(148, 163, 184, 0.2);
+  --accent: #10b981;
+  --danger: #ef4444;
+}
+
+html, body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+  background: var(--bg);
+  color: var(--text);
+}
+
+button, input, select, textarea {
+  font: inherit;
+}
+
+.btn {
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.btn:hover { border-color: rgba(148,163,184,0.45); }
+.btn.primary { background: rgba(16,185,129,0.15); border-color: rgba(16,185,129,0.6); }
+.btn.danger { background: rgba(239,68,68,0.12); border-color: rgba(239,68,68,0.6); }
+
+.input, .select, .textarea {
+  width: 100%;
+  padding: 0.6rem 0.75rem;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--panel2);
+  color: var(--text);
+}
+
+.muted { color: var(--muted); }
+

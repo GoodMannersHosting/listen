@@ -1,65 +1,65 @@
 const API_BASE = '/api';
 
+async function request(method, url, body, headers = {}) {
+  const res = await fetch(`${API_BASE}${url}`, {
+    method,
+    headers,
+    body
+  });
+  if (!res.ok) {
+    let detail = `HTTP ${res.status}`;
+    try {
+      const j = await res.json();
+      detail = j.detail || detail;
+    } catch {}
+    throw new Error(detail);
+  }
+  if (res.status === 204) return null;
+  return res.json();
+}
+
 export const api = {
-  async get(url) {
-    const response = await fetch(`${API_BASE}${url}`);
-    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-    return response.json();
+  listUploads() {
+    return request('GET', '/uploads');
   },
-
-  async post(url, data) {
-    const response = await fetch(`${API_BASE}${url}`, {
-      method: 'POST',
-      headers: data instanceof FormData ? {} : { 'Content-Type': 'application/json' },
-      body: data instanceof FormData ? data : JSON.stringify(data),
-    });
-    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-    return response.json();
+  getUpload(id) {
+    return request('GET', `/uploads/${id}`);
   },
-
-  async put(url, data) {
-    const response = await fetch(`${API_BASE}${url}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
-    });
-    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-    return response.json();
+  getSegments(id) {
+    return request('GET', `/uploads/${id}/segments`);
   },
-
-  async delete(url) {
-    const response = await fetch(`${API_BASE}${url}`, { method: 'DELETE' });
-    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-    if (response.status === 204) return null;
-    return response.json();
-  },
-
-  async uploadFile(formData, onProgress) {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-
-      xhr.upload.addEventListener('progress', (e) => {
-        if (e.lengthComputable && onProgress) {
-          const percentComplete = Math.round((e.loaded / e.total) * 100);
-          onProgress(percentComplete);
-        }
-      });
-
-      xhr.addEventListener('load', () => {
-        if (xhr.status >= 200 && xhr.status < 300) {
-          try {
-            resolve(JSON.parse(xhr.responseText));
-          } catch (e) {
-            reject(new Error('Failed to parse response'));
-          }
-        } else {
-          reject(new Error(xhr.statusText || 'Upload failed'));
-        }
-      });
-
-      xhr.addEventListener('error', () => reject(new Error('Network error')));
-      xhr.open('POST', `${API_BASE}/upload`);
-      xhr.send(formData);
+  renameUpload(id, display_name) {
+    return request('PATCH', `/uploads/${id}`, JSON.stringify({ display_name }), {
+      'Content-Type': 'application/json'
     });
   },
+  deleteUpload(id) {
+    return request('DELETE', `/uploads/${id}`);
+  },
+  createUpload(formData) {
+    return request('POST', '/uploads', formData);
+  },
+  reprocessUpload(id, payload) {
+    return request('POST', `/uploads/${id}/reprocess`, JSON.stringify(payload), {
+      'Content-Type': 'application/json'
+    });
+  },
+  getJob(id) {
+    return request('GET', `/jobs/${id}`);
+  },
+  getJobStats() {
+    return request('GET', '/jobs/stats');
+  },
+  listActiveJobs() {
+    return request('GET', '/jobs/active');
+  },
+  listPrompts() {
+    return request('GET', '/prompts');
+  },
+  updatePrompt(id, payload) {
+    return request('PUT', `/prompts/${id}`, JSON.stringify(payload), {
+      'Content-Type': 'application/json'
+    });
+  }
 };
+
