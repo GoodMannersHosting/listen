@@ -443,7 +443,7 @@
               </div>
             {/if}
           </button>
-          <button class="btn danger" on:click={() => deleteUpload(u)}>Del</button>
+          <button class="btn danger" title="Delete" aria-label="Delete" on:click={() => deleteUpload(u)}>🗑️</button>
         </div>
       {/each}
     </div>
@@ -908,6 +908,7 @@
     .modal { width: 92vw; }
     .layout { grid-template-columns: 1fr; }
     .grid { grid-template-columns: 1fr; }
+    .layout { overflow-x: hidden; }
 
     .header {
       flex-direction: column;
@@ -948,6 +949,7 @@
       transform: translateX(-110%);
       transition: transform 160ms ease;
       box-shadow: 0 0 0 1px rgba(148,163,184,0.18), 0 25px 60px rgba(0,0,0,0.65);
+      overflow-x: hidden;
     }
     .sidebar.open { transform: translateX(0); }
     .sidebarBackdrop {
@@ -962,6 +964,15 @@
     }
 
     .mobileOnly { display: inline-flex; }
+    .list { overflow-x: hidden; }
+    .item { min-width: 0; }
+    .itemMain { width: 100%; min-width: 0; }
+    .itemName,
+    .itemMeta {
+      max-width: 100%;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
   }
 </style>
 
