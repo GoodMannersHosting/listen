@@ -21,6 +21,8 @@ class Settings(BaseSettings):
 
     # Whisper
     whisper_model: str = "base"
+    # auto|cpu|cuda (use cpu if no GPU/CUDA runtime in container)
+    whisper_device: str = "auto"
     audio_chunk_seconds: int = 15
 
     # OpenWebUI / Ollama-compatible OpenAI API

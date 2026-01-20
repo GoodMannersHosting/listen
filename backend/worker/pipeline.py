@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import ctypes
 import json
+import logging
 import math
 import os
 import subprocess
@@ -10,6 +12,8 @@ from typing import Optional
 from faster_whisper import WhisperModel
 
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -71,27 +75,85 @@ def chunk_wav(input_wav: str, chunk_dir: str, chunk_seconds: int) -> list[str]:
 
 
 _MODEL: WhisperModel | None = None
+_MODEL_DEVICE: str | None = None
+
+
+def _cuda_libs_available() -> bool:
+    # If these libs are missing, faster-whisper will crash at runtime like:
+    # "RuntimeError: Library libcublas.so.12 is not found or cannot be loaded"
+    for lib in ("libcublas.so.12", "libcublas.so.11", "libcublas.so"):
+        try:
+            ctypes.CDLL(lib)
+            return True
+        except OSError:
+            continue
+    return False
+
+
+def _pick_device() -> str:
+    requested = (settings.whisper_device or "auto").strip().lower()
+    if requested in ("cpu",):
+        return "cpu"
+    if requested in ("cuda", "gpu"):
+        return "cuda"
+
+    # auto: only attempt cuda if the pod/container looks GPU-enabled AND the CUDA libs are loadable.
+    cuda_visible = (os.environ.get("CUDA_VISIBLE_DEVICES") or "").strip().lower()
+    gpu_hint = bool(cuda_visible and cuda_visible not in ("-1", "none", "void"))
+    gpu_dev = any(
+        os.path.exists(p)
+        for p in (
+            "/dev/nvidiactl",
+            "/dev/nvidia0",
+            "/dev/nvidia1",
+            "/dev/nvidia-uvm",
+        )
+    )
+    if (gpu_hint or gpu_dev) and _cuda_libs_available():
+        return "cuda"
+    return "cpu"
+
+
+def _build_model(device: str) -> WhisperModel:
+    if device == "cuda":
+        return WhisperModel(settings.whisper_model, device="cuda", compute_type="float16")
+    return WhisperModel(settings.whisper_model, device="cpu", compute_type="int8")
 
 
 def get_model() -> WhisperModel:
-    global _MODEL
+    global _MODEL, _MODEL_DEVICE
     if _MODEL is not None:
         return _MODEL
 
-    # Try GPU then CPU fallback.
+    device = _pick_device()
     try:
-        _MODEL = WhisperModel(settings.whisper_model, device="cuda", compute_type="float16")
+        _MODEL = _build_model(device)
+        _MODEL_DEVICE = device
         return _MODEL
-    except Exception:
-        _MODEL = WhisperModel(settings.whisper_model, device="cpu", compute_type="int8")
+    except Exception as e:
+        logger.warning("Failed to init whisper model on %s: %s. Falling back to CPU.", device, e)
+        _MODEL = _build_model("cpu")
+        _MODEL_DEVICE = "cpu"
         return _MODEL
 
 
 def transcribe_chunk(
     chunk_path: str,
 ) -> tuple[str, list[Segment], Optional[str]]:
+    global _MODEL, _MODEL_DEVICE
     model = get_model()
-    segments, info = model.transcribe(chunk_path, vad_filter=True)
+    try:
+        segments, info = model.transcribe(chunk_path, vad_filter=True)
+    except RuntimeError as e:
+        # Some environments let WhisperModel(device="cuda") initialize, but fail later when CUDA libs are missing.
+        msg = str(e).lower()
+        if _MODEL_DEVICE == "cuda" and ("libcublas" in msg or "cublas" in msg or "cuda" in msg):
+            logger.warning("CUDA runtime error (%s). Retrying transcription on CPU.", e)
+            _MODEL = _build_model("cpu")
+            _MODEL_DEVICE = "cpu"
+            segments, info = _MODEL.transcribe(chunk_path, vad_filter=True)
+        else:
+            raise
     language: Optional[str] = getattr(info, "language", None) or None
 
     out_segments: list[Segment] = []
