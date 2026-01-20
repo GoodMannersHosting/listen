@@ -31,6 +31,7 @@
   let error = '';
   let searchQuery = '';
   let searchTimer = null;
+  let sidebarOpen = false;
 
   function normalizeSummaryMarkdown(md) {
     if (!md) return md;
@@ -137,9 +138,10 @@
     uploads = await api.listUploads(searchQuery);
   }
 
-  async function selectUpload(id) {
+  async function selectUpload(id, { closeSidebar = false } = {}) {
     current = await api.getUpload(id);
     segments = await api.getSegments(id);
+    if (closeSidebar) sidebarOpen = false;
   }
 
   function fmtDate(d) {
@@ -351,7 +353,7 @@
       await refreshUploads();
       // Best-effort refresh of the currently open item, without stealing focus.
       if (current?.id) {
-        await selectUpload(current.id);
+        await selectUpload(current.id, { closeSidebar: false });
       }
     }, 1000);
   });
@@ -364,7 +366,16 @@
 </script>
 
 <div class="layout">
-  <aside class="sidebar">
+  {#if sidebarOpen}
+    <button
+      type="button"
+      class="sidebarBackdrop"
+      aria-label="Close menu"
+      on:click={() => (sidebarOpen = false)}
+    ></button>
+  {/if}
+
+  <aside class="sidebar" class:open={sidebarOpen}>
     <div class="sidebarHeader">
       <div class="sidebarHeaderLeft">
         <div class="title">Listen</div>
@@ -372,12 +383,22 @@
           Jobs in queue: {jobStats?.active ?? 0}
         </div>
       </div>
-      <button class="btn" on:click={openPrompts}>Prompts</button>
+      <div style="display:flex; gap:8px">
+        <button class="btn mobileOnly" on:click={() => (sidebarOpen = false)}>Close</button>
+        <button class="btn" on:click={openPrompts}>Prompts</button>
+      </div>
     </div>
 
     <form class="uploadForm" on:submit={onUploadSubmit}>
       <label class="label" for="fileInput">Upload audio</label>
-      <input id="fileInput" class="input" name="file" type="file" accept="audio/*" required />
+      <input
+        id="fileInput"
+        class="input"
+        name="file"
+        type="file"
+        accept="audio/*,.m4a,audio/mp4,audio/x-m4a,.mp4,video/mp4"
+        required
+      />
 
       <div class="row">
         <label class="check"><input type="checkbox" name="summarize" value="true" /> Summarize</label>
@@ -408,7 +429,7 @@
       </div>
       {#each uploads as u}
         <div class="item" class:active={current?.id === u.id}>
-          <button class="itemMain" on:click={() => selectUpload(u.id)}>
+          <button class="itemMain" on:click={() => selectUpload(u.id, { closeSidebar: true })}>
             <div class="itemName">{u.display_name}</div>
             <div class="itemMeta muted">{fmtDate(u.created_at)}</div>
             {#if u.tags?.length}
@@ -429,6 +450,11 @@
   </aside>
 
   <main class="main">
+    <div class="mobileTopBar">
+      <button class="btn burger" aria-label="Open menu" on:click={() => (sidebarOpen = true)}>☰</button>
+      <div class="mobileTopBarTitle">Listen</div>
+      <div class="queuePill" title="Queued + processing">Jobs: {jobStats?.active ?? 0}</div>
+    </div>
     {#if showJobBar}
       <div class="jobBar">
         {#if topJob}
@@ -859,17 +885,83 @@
   .empty { padding: 80px 24px; }
   .error { color: #fecaca; background: rgba(239,68,68,0.12); border: 1px solid rgba(239,68,68,0.4); padding: 8px; border-radius: 10px; }
   .modalBackdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: grid; place-items: center; padding: 16px; }
-  .modal { width: min(980px, 96vw); background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 12px; }
+  .modal {
+    width: min(980px, 96vw);
+    box-sizing: border-box;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 12px;
+    max-height: calc(100vh - 32px);
+    overflow: auto;
+  }
   .modalHeader { display: flex; justify-content: space-between; align-items: center; padding: 8px; border-bottom: 1px solid var(--border); }
   .h2 { font-size: 1.1rem; font-weight: 800; }
   .modalBody { display: grid; grid-template-columns: 280px 1fr; gap: 12px; padding: 12px; }
   .promptList { display: grid; gap: 8px; align-content: start; }
   .promptItem { text-align: left; border: 1px solid var(--border); border-radius: 10px; background: rgba(15,23,42,0.35); color: var(--text); padding: 10px; cursor: pointer; }
   .promptEditor { display: grid; gap: 8px; }
+  .mobileTopBar { display: none; }
+  .mobileOnly { display: none; }
 
   @media (max-width: 900px) {
+    .modal { width: 92vw; }
     .layout { grid-template-columns: 1fr; }
     .grid { grid-template-columns: 1fr; }
+
+    .header {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 10px;
+    }
+    .headerActions {
+      width: 100%;
+      flex-wrap: wrap;
+      justify-content: flex-start;
+    }
+
+    .mobileTopBar {
+      position: sticky;
+      top: 0;
+      z-index: 6;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 10px 10px;
+      margin: -6px -6px 12px -6px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: rgba(15,23,42,0.92);
+      backdrop-filter: blur(10px);
+    }
+    .mobileTopBarTitle { font-weight: 800; }
+    .btn.burger { padding: 0.45rem 0.7rem; }
+
+    .sidebar {
+      position: fixed;
+      top: 0;
+      bottom: 0;
+      left: 0;
+      width: min(360px, 92vw);
+      z-index: 20;
+      transform: translateX(-110%);
+      transition: transform 160ms ease;
+      box-shadow: 0 0 0 1px rgba(148,163,184,0.18), 0 25px 60px rgba(0,0,0,0.65);
+    }
+    .sidebar.open { transform: translateX(0); }
+    .sidebarBackdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 19;
+      background: rgba(0,0,0,0.55);
+      border: 0;
+      padding: 0;
+      margin: 0;
+      cursor: pointer;
+    }
+
+    .mobileOnly { display: inline-flex; }
   }
 </style>
 
